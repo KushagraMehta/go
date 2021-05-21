@@ -389,3 +389,28 @@ func BenchmarkUncommon(b *testing.B) {
 		}
 	}
 }
+
+func TestCFReadMIMEHeaderWithPreprocessor(t *testing.T) {
+	p := new(testPreprocessor)
+	r := reader("my-key: Value 1  \r\nlong-kEy: Even \n Longer Value\r\nmy-KEY: Value 2\r\n\n")
+	m, err := r.CFReadMIMEHeaderWithPreprocessor(p.do)
+	want := MIMEHeader{
+		"My-Key":   {"Value 1", "Value 2"},
+		"Long-Key": {"Even Longer Value"},
+	}
+	if !reflect.DeepEqual(m, want) || err != nil {
+		t.Fatalf("ReadMIMEHeader: %v, %v; want %v", m, err, want)
+	}
+	wantOrdered := []string{"my-key", "long-kEy", "my-KEY"}
+	if !reflect.DeepEqual(p.ordered, wantOrdered) {
+		t.Fatalf("Unexpected result of preprocessor: got %v; want %v", p.ordered, wantOrdered)
+	}
+}
+
+type testPreprocessor struct {
+	ordered []string
+}
+
+func (p *testPreprocessor) do(key, _ []byte) {
+	p.ordered = append(p.ordered, string(key))
+}

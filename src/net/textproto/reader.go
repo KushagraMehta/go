@@ -481,6 +481,17 @@ func (r *Reader) ReadDotLines() ([]string, error) {
 //	}
 //
 func (r *Reader) ReadMIMEHeader() (MIMEHeader, error) {
+	return r.CFReadMIMEHeaderWithPreprocessor(nil)
+}
+
+// CFReadMIMEWithPreprocessor is like ReadMIMEHeader except that preprocessor is
+// run on the each raw key/value pair in the header before processing them into
+// a MIMEHeader. If preprocessor is nil, then the methods are identical.
+//
+// NOTE: The "CF" prefix denotes the fact that this method was added in order to
+// support a Cloudflare-internal use case. It may or may not be useful for
+// upstream Go.
+func (r *Reader) CFReadMIMEHeaderWithPreprocessor(preprocessor func(key, value []byte)) (MIMEHeader, error) {
 	// Avoid lots of small slice allocations later by allocating one
 	// large one ahead of time which we'll cut up into smaller
 	// slices. If this isn't big enough later, we allocate small ones.
@@ -512,7 +523,21 @@ func (r *Reader) ReadMIMEHeader() (MIMEHeader, error) {
 		if i < 0 {
 			return m, ProtocolError("malformed MIME header line: " + string(kv))
 		}
-		key := canonicalMIMEHeaderKey(kv[:i])
+		keyBytes := kv[:i]
+
+		// Skip initial spaces in value.
+		i++ // skip colon
+		for i < len(kv) && (kv[i] == ' ' || kv[i] == '\t') {
+			i++
+		}
+		valueBytes := kv[i:]
+
+		// Process the raw key and value.
+		if preprocessor != nil {
+			preprocessor(keyBytes, valueBytes)
+		}
+
+		key := canonicalMIMEHeaderKey(keyBytes)
 
 		// As per RFC 7230 field-name is a token, tokens consist of one or more chars.
 		// We could return a ProtocolError here, but better to be liberal in what we
@@ -521,12 +546,7 @@ func (r *Reader) ReadMIMEHeader() (MIMEHeader, error) {
 			continue
 		}
 
-		// Skip initial spaces in value.
-		i++ // skip colon
-		for i < len(kv) && (kv[i] == ' ' || kv[i] == '\t') {
-			i++
-		}
-		value := string(kv[i:])
+		value := string(valueBytes)
 
 		vv := m[key]
 		if vv == nil && len(strs) > 0 {
