@@ -3,7 +3,6 @@
 package http_test
 
 import (
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -11,16 +10,17 @@ import (
 
 // Check that, if a CFRequestProcessor constructor is configured, then the
 // request context propagates the request processor of the correct type.
-func TestCFRequestProcessor(t *testing.T) {
+func TestCF_HTTP1RequestProcessor(t *testing.T) {
+	ch := make(chan *testRequestProcessor)
+
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		k := http.CFRequestProcessorContextKey("cf-request-processor")
 		v := r.Context().Value(k)
-		_, ok := v.(*testRequestProcessor)
-		if v == nil || !ok {
-			w.Write([]byte{0})
-		} else {
-			w.Write([]byte{1})
-		}
+
+		go func() {
+			p, _ := v.(*testRequestProcessor)
+			ch <- p
+		}()
 	}))
 	ts.Config.CFNewRequestProcessor = newTestRequestProcessor
 	defer ts.Close()
@@ -31,27 +31,56 @@ func TestCFRequestProcessor(t *testing.T) {
 	}
 	defer resp.Body.Close()
 
-	res, err := io.ReadAll(resp.Body)
+	p := <-ch
+	if p == nil {
+		t.Fatal("processor not propagated")
+	}
+}
+
+// Same test as above, except enable HTTP/2.
+func TestCF_HTTP2RequestProcessor(t *testing.T) {
+	ch := make(chan *testRequestProcessor)
+
+	ts := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		k := http.CFRequestProcessorContextKey("cf-request-processor")
+		v := r.Context().Value(k)
+
+		go func() {
+			p, _ := v.(*testRequestProcessor)
+			ch <- p
+		}()
+	}))
+	ts.EnableHTTP2 = true
+	ts.Config.CFNewRequestProcessor = newTestRequestProcessor
+	ts.StartTLS()
+	defer ts.Close()
+
+	tc := ts.Client()
+	resp, err := tc.Get(ts.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer resp.Body.Close()
 
-	if res[0] != 1 {
-		t.Fatal("Request context is missing request processor")
+	p := <-ch
+	if p == nil {
+		t.Fatal("processor not propagated")
 	}
 }
 
 // Check that the request context does not propagate a request processor if no
 // constructor is configured.
-func TestCFNoRequestProcessor(t *testing.T) {
+func TestCF_NoRequestProcessor(t *testing.T) {
+	ch := make(chan *testRequestProcessor)
+
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		k := http.CFRequestProcessorContextKey("cf-request-processor")
 		v := r.Context().Value(k)
-		if v == nil {
-			w.Write([]byte{0})
-		} else {
-			w.Write([]byte{1})
-		}
+
+		go func() {
+			p, _ := v.(*testRequestProcessor)
+			ch <- p
+		}()
 	}))
 	defer ts.Close()
 
@@ -61,13 +90,9 @@ func TestCFNoRequestProcessor(t *testing.T) {
 	}
 	defer resp.Body.Close()
 
-	res, err := io.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if res[0] != 0 {
-		t.Fatal("Request context has the request processor but none was expected")
+	p := <-ch
+	if p != nil {
+		t.Fatal("processor propagated; expected nil")
 	}
 }
 
