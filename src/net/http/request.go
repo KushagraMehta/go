@@ -18,6 +18,7 @@ import (
 	"mime"
 	"mime/multipart"
 	"net"
+	"net/cf"
 	"net/http/httptrace"
 	"net/textproto"
 	"net/url"
@@ -1028,7 +1029,7 @@ func readRequest(b *bufio.Reader, deleteHostHeader bool) (req *Request, err erro
 //
 // NOTE: The "cf" prefix denotes that this method exits in order to support a
 // Cloudflare-internal use-case. It may or may not be useful in upstream Go.
-func cfReadRequestWithProcessor(b *bufio.Reader, deleteHostHeader bool, p CFRequestProcessor) (req *Request, err error) {
+func cfReadRequestWithProcessor(b *bufio.Reader, deleteHostHeader bool, p cf.HeaderProcessor) (req *Request, err error) {
 	tp := newTextprotoReader(b)
 	req = new(Request)
 
@@ -1043,9 +1044,6 @@ func cfReadRequestWithProcessor(b *bufio.Reader, deleteHostHeader bool, p CFRequ
 			err = io.ErrUnexpectedEOF
 		}
 	}()
-	if p != nil {
-		p.RequestLine([]byte(s))
-	}
 
 	var ok bool
 	req.Method, req.RequestURI, req.Proto, ok = parseRequestLine(s)
@@ -1084,11 +1082,7 @@ func cfReadRequestWithProcessor(b *bufio.Reader, deleteHostHeader bool, p CFRequ
 	}
 
 	// Subsequent lines: Key: value.
-	var headerPreprocessor func(key, value []byte)
-	if p != nil {
-		headerPreprocessor = p.Header
-	}
-	mimeHeader, err := tp.CFReadMIMEHeaderWithPreprocessor(headerPreprocessor)
+	mimeHeader, err := tp.CFReadMIMEHeader(p)
 	if err != nil {
 		return nil, err
 	}

@@ -390,27 +390,36 @@ func BenchmarkUncommon(b *testing.B) {
 	}
 }
 
-func TestCFReadMIMEHeaderWithPreprocessor(t *testing.T) {
-	p := new(testPreprocessor)
+func TestCFReadHeader(t *testing.T) {
+	p := new(testHeaderProcessor)
 	r := reader("my-key: Value 1  \r\nlong-kEy: Even \n Longer Value\r\nmy-KEY: Value 2\r\n\n")
-	m, err := r.CFReadMIMEHeaderWithPreprocessor(p.do)
+	m, err := r.CFReadMIMEHeader(p)
 	want := MIMEHeader{
 		"My-Key":   {"Value 1", "Value 2"},
 		"Long-Key": {"Even Longer Value"},
 	}
 	if !reflect.DeepEqual(m, want) || err != nil {
-		t.Fatalf("ReadMIMEHeader: %v, %v; want %v", m, err, want)
+		t.Fatalf("CFReadMIMEHeader: %v, %v; want %v", m, err, want)
 	}
-	wantOrdered := []string{"my-key", "long-kEy", "my-KEY"}
-	if !reflect.DeepEqual(p.ordered, wantOrdered) {
-		t.Fatalf("Unexpected result of preprocessor: got %v; want %v", p.ordered, wantOrdered)
+	wantCanonicalOrdered := []string{"My-Key", "Long-Key", "My-Key"}
+	if !reflect.DeepEqual(p.canonicalOrdered, wantCanonicalOrdered) {
+		t.Fatalf("Test processor failed to compute order of canonical header keys: got %v; want %v", p.canonicalOrdered, wantCanonicalOrdered)
+	}
+	wantRawOrdered := []string{"my-key", "long-kEy", "my-KEY"}
+	if !reflect.DeepEqual(p.rawOrdered, wantRawOrdered) {
+		t.Fatalf("Test processor failed to compute order of raw header keys: got %v; want %v", p.rawOrdered, wantRawOrdered)
 	}
 }
 
-type testPreprocessor struct {
-	ordered []string
+type testHeaderProcessor struct {
+	canonicalOrdered []string
+	rawOrdered       []string
 }
 
-func (p *testPreprocessor) do(key, _ []byte) {
-	p.ordered = append(p.ordered, string(key))
+func (p *testHeaderProcessor) HeaderRaw(key []byte) {
+	p.rawOrdered = append(p.rawOrdered, string(key))
+}
+
+func (p *testHeaderProcessor) HeaderCanonical(key string) {
+	p.canonicalOrdered = append(p.canonicalOrdered, key)
 }

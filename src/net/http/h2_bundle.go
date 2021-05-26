@@ -34,6 +34,7 @@ import (
 	"math"
 	mathrand "math/rand"
 	"net"
+	"net/cf"
 	"net/http/httptrace"
 	"net/textproto"
 	"net/url"
@@ -5579,8 +5580,15 @@ func (sc *http2serverConn) newWriterAndRequest(st *http2stream, f *http2MetaHead
 	}
 
 	rp.header = make(Header)
+	if newP := sc.hs.CFNewHeaderProcessor; newP != nil {
+		rp.cfHeaderProcessor = sc.hs.CFNewHeaderProcessor()
+	}
 	for _, hf := range f.RegularFields() {
-		rp.header.Add(sc.canonicalHeader(hf.Name), hf.Value)
+		key := sc.canonicalHeader(hf.Name)
+		rp.header.Add(key, hf.Value)
+		if p := rp.cfHeaderProcessor; p != nil {
+			p.HeaderCanonical(key)
+		}
 	}
 	if rp.authority == "" {
 		rp.authority = rp.header.Get("Host")
@@ -5611,6 +5619,7 @@ type http2requestParam struct {
 	method                  string
 	scheme, authority, path string
 	header                  Header
+	cfHeaderProcessor       cf.HeaderProcessor
 }
 
 func (sc *http2serverConn) newWriterAndRequestNoBody(st *http2stream, rp http2requestParam) (*http2responseWriter, *Request, error) {
@@ -5683,6 +5692,11 @@ func (sc *http2serverConn) newWriterAndRequestNoBody(st *http2stream, rp http2re
 		Trailer:    trailer,
 	}
 	req = req.WithContext(st.ctx)
+
+	if p := rp.cfHeaderProcessor; p != nil {
+		k := cf.HeaderProcessorContextKey("cf-header-processor")
+		req.ctx = context.WithValue(req.ctx, k, p)
+	}
 
 	rws := http2responseWriterStatePool.Get().(*http2responseWriterState)
 	bwSave := rws.bw

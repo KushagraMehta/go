@@ -17,6 +17,7 @@ import (
 	"log"
 	"math/rand"
 	"net"
+	"net/cf"
 	"net/textproto"
 	"net/url"
 	urlpkg "net/url"
@@ -959,8 +960,8 @@ func (c *conn) readRequest(ctx context.Context) (w *response, err error) {
 		return nil, ErrHijacked
 	}
 
-	var p CFRequestProcessor
-	if newP := c.server.CFNewRequestProcessor; newP != nil {
+	var p cf.HeaderProcessor
+	if newP := c.server.CFNewHeaderProcessor; newP != nil {
 		p = newP()
 	}
 
@@ -1027,7 +1028,7 @@ func (c *conn) readRequest(ctx context.Context) (w *response, err error) {
 	delete(req.Header, "Host")
 
 	if p != nil {
-		k := CFRequestProcessorContextKey("cf-request-processor")
+		k := cf.HeaderProcessorContextKey("cf-header-processor")
 		ctx = context.WithValue(ctx, k, p)
 	}
 	ctx, cancelCtx := context.WithCancel(ctx)
@@ -2647,13 +2648,14 @@ type Server struct {
 	// value.
 	ConnContext func(ctx context.Context, c net.Conn) context.Context
 
-	// CFNewRequestProcessor, if set, is called prior to each request to
-	// construct a CFRequestProcessor.
+	// CFNewHeaderProcessor, if set, is called prior to processing each request
+	// to construct a net/cf.HeaderProcessor. This interface is called while
+	// processing the request to record various features of the headers.
 	//
 	// NOTE: The "CF" prefix denotes that this callback was added to support a
 	// Cloudflare-internal use-case. It may or may not be useful for upstream
 	// Go.
-	CFNewRequestProcessor func() CFRequestProcessor
+	CFNewHeaderProcessor func() cf.HeaderProcessor
 
 	inShutdown atomicBool // true when when server is in shutdown
 

@@ -1,28 +1,29 @@
 // Copyright (c) 2021 Cloudflare, Inc.
 
-package http_test
+package cf_test
 
 import (
+	"net/cf"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 )
 
-// Check that, if a CFRequestProcessor constructor is configured, then the
+// Check that, if a net/cf.HeaderProcessor constructor is configured, then the
 // request context propagates the request processor of the correct type.
-func TestCF_HTTP1RequestProcessor(t *testing.T) {
-	ch := make(chan *testRequestProcessor)
+func TestHTTP1HeaderProcessor(t *testing.T) {
+	ch := make(chan *testHeaderProcessor)
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		k := http.CFRequestProcessorContextKey("cf-request-processor")
+		k := cf.HeaderProcessorContextKey("cf-header-processor")
 		v := r.Context().Value(k)
 
 		go func() {
-			p, _ := v.(*testRequestProcessor)
+			p, _ := v.(*testHeaderProcessor)
 			ch <- p
 		}()
 	}))
-	ts.Config.CFNewRequestProcessor = newTestRequestProcessor
+	ts.Config.CFNewHeaderProcessor = newTestHeaderProcessor
 	defer ts.Close()
 
 	resp, err := http.Get(ts.URL)
@@ -38,20 +39,20 @@ func TestCF_HTTP1RequestProcessor(t *testing.T) {
 }
 
 // Same test as above, except enable HTTP/2.
-func TestCF_HTTP2RequestProcessor(t *testing.T) {
-	ch := make(chan *testRequestProcessor)
+func TestHTTP2HeaderProcessor(t *testing.T) {
+	ch := make(chan *testHeaderProcessor)
 
 	ts := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		k := http.CFRequestProcessorContextKey("cf-request-processor")
+		k := cf.HeaderProcessorContextKey("cf-header-processor")
 		v := r.Context().Value(k)
 
 		go func() {
-			p, _ := v.(*testRequestProcessor)
+			p, _ := v.(*testHeaderProcessor)
 			ch <- p
 		}()
 	}))
 	ts.EnableHTTP2 = true
-	ts.Config.CFNewRequestProcessor = newTestRequestProcessor
+	ts.Config.CFNewHeaderProcessor = newTestHeaderProcessor
 	ts.StartTLS()
 	defer ts.Close()
 
@@ -70,15 +71,15 @@ func TestCF_HTTP2RequestProcessor(t *testing.T) {
 
 // Check that the request context does not propagate a request processor if no
 // constructor is configured.
-func TestCF_NoRequestProcessor(t *testing.T) {
-	ch := make(chan *testRequestProcessor)
+func TestNoHeaderProcessor(t *testing.T) {
+	ch := make(chan *testHeaderProcessor)
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		k := http.CFRequestProcessorContextKey("cf-request-processor")
+		k := cf.HeaderProcessorContextKey("cf-header-processor")
 		v := r.Context().Value(k)
 
 		go func() {
-			p, _ := v.(*testRequestProcessor)
+			p, _ := v.(*testHeaderProcessor)
 			ch <- p
 		}()
 	}))
@@ -96,16 +97,16 @@ func TestCF_NoRequestProcessor(t *testing.T) {
 	}
 }
 
-type testRequestProcessor struct{}
+type testHeaderProcessor struct{}
 
-func newTestRequestProcessor() http.CFRequestProcessor {
-	return new(testRequestProcessor)
+func newTestHeaderProcessor() cf.HeaderProcessor {
+	return new(testHeaderProcessor)
 }
 
-func (p *testRequestProcessor) RequestLine(line []byte) {
+func (p *testHeaderProcessor) HeaderRaw(key []byte) {
 	// no-op
 }
 
-func (p *testRequestProcessor) Header(key, value []byte) {
+func (p *testHeaderProcessor) HeaderCanonical(key string) {
 	// no-op
 }
